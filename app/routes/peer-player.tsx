@@ -8,6 +8,7 @@ import {
 } from "~/utils/peer-connection";
 import * as v from "valibot";
 import { ICE_SERVERS } from "~/utils/ice_server";
+import { Button, PageShell, PageTitle, Toast, VideoGrid } from "~/components/ui";
 
 export function loader({ request, context }: Route.LoaderArgs) {
   context.cloudflare.env.BROADCASTER;
@@ -37,11 +38,7 @@ export default function ({ loaderData }: Route.ComponentProps) {
       const events = v.parse(v.array(EventSchema), JSON.parse(event.data));
       const sender = events[0].sender;
       if (sender !== username) {
-        if (
-          events.some((event) => {
-            return event.type === "offer";
-          })
-        ) {
+        if (events.some((event) => event.type === "offer")) {
           const answer = await make_answer(peer_connection, username, events);
           const ice_candidates = await make_ice_candidates(peer_connection);
           ws.send(
@@ -51,21 +48,15 @@ export default function ({ loaderData }: Route.ComponentProps) {
                 sender: username,
                 sessionDescription: JSON.stringify(answer),
               },
-              ...ice_candidates.map((candidate) => {
-                return {
-                  type: "candidate",
-                  candidate: JSON.stringify(candidate),
-                  sender: username,
-                } as CandidateEvent;
-              }),
+              ...ice_candidates.map((candidate) => ({
+                type: "candidate",
+                candidate: JSON.stringify(candidate),
+                sender: username,
+              } as CandidateEvent)),
             ] as Event[]),
           );
         }
-        if (
-          events.some((event) => {
-            return event.type === "answer";
-          })
-        ) {
+        if (events.some((event) => event.type === "answer")) {
           await add_answer(username, peer_connection, events);
         }
       }
@@ -81,13 +72,11 @@ export default function ({ loaderData }: Route.ComponentProps) {
               sender: username,
               sessionDescription: JSON.stringify(offer),
             },
-            ...ice_candidates.map((candidate) => {
-              return {
-                type: "candidate",
-                candidate: JSON.stringify(candidate),
-                sender: username,
-              } as CandidateEvent;
-            }),
+            ...ice_candidates.map((candidate) => ({
+              type: "candidate",
+              candidate: JSON.stringify(candidate),
+              sender: username,
+            } as CandidateEvent)),
           ] as Event[]),
         );
       }
@@ -100,56 +89,38 @@ export default function ({ loaderData }: Route.ComponentProps) {
   }, [host, username]);
 
   return (
-    <main className="max-w-3xl mx-auto space-y-2 py-2">
-      <section className="grid grid-cols-6 gap-2">
-        <div className="col-span-4 border-2 border-gray-900 relative">
-          <video className="w-full" id="local-video" autoPlay playsInline />
-          <span className="absolute bottom-2 right-2 text-gray-100 bg-gray-900 rounded-md p-1">
-            {username}
-          </span>
-        </div>
-        <video
-          className="col-span-2 border-2 border-gray-900"
-          id="remote-video"
-          autoPlay
-          playsInline
-        />
-      </section>
+    <PageShell>
+      <PageTitle>Peer Player</PageTitle>
+
+      <VideoGrid username={username} />
 
       {host === username ? (
-        <section>
-          <button
-            type="button"
-            className="p-4 bg-blue-100 w-full border-2 text-blue-900 border-blue-900 hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-blue-100 disabled:text-blue-300 disabled:border-blue-300 col-span-4"
-            onClick={async () => {
-              const url = new URL(window.location.href);
-              url.searchParams.delete("username");
-              navigator.clipboard.writeText(url.toString());
-              show_toast("Invite link copied");
-            }}
-          >
-            Copy invite link
-          </button>
-        </section>
+        <Button
+          type="button"
+          style={{ width: "100%" }}
+          onClick={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("username");
+            navigator.clipboard.writeText(url.toString());
+            show_toast("Invite link copied");
+          }}
+        >
+          Copy invite link
+        </Button>
       ) : null}
-      <output
-        id="toast"
-        className="bg-red-100 px-12 py-6 border border-red-900 hidden absolute bottom-8 right-8 transition"
-        aria-live="polite"
-      />
-    </main>
+
+      <Toast />
+    </PageShell>
   );
 }
 
 function show_toast(message: string, duration = 2000) {
   const toast = document.getElementById("toast");
-  if (!toast) {
-    return;
-  }
+  if (!toast) return;
   toast.textContent = message;
-  toast.classList.remove("hidden");
+  (toast as HTMLElement).style.display = "block";
   const id = setTimeout(() => {
-    toast.classList.add("hidden");
+    (toast as HTMLElement).style.display = "none";
     clearTimeout(id);
   }, duration);
 }
@@ -159,15 +130,9 @@ async function add_answer(
   peer_connection: RTCPeerConnection,
   events: Event[],
 ) {
-  const answer_event = events.find((event) => {
-    return event.type === "answer";
-  });
-  if (!answer_event) {
-    throw new Error('"offer" event is required');
-  }
-  const candidate_events = events.filter((event) => {
-    return event.type === "candidate";
-  });
+  const answer_event = events.find((event) => event.type === "answer");
+  if (!answer_event) throw new Error('"answer" event is required');
+  const candidate_events = events.filter((event) => event.type === "candidate");
   await peer_connection.setRemoteDescription(
     JSON.parse(answer_event.sessionDescription),
   );
@@ -181,7 +146,7 @@ async function add_answer(
 async function make_ice_candidates(
   peer_connection: RTCPeerConnection,
 ): Promise<RTCIceCandidate[]> {
-  let candidates: RTCIceCandidate[] = [];
+  const candidates: RTCIceCandidate[] = [];
   return new Promise((resolve) => {
     peer_connection.onicecandidate = (event) => {
       if (event.candidate) {
@@ -198,15 +163,9 @@ async function make_answer(
   username: string,
   events: Event[],
 ) {
-  const offer_event = events.find((event) => {
-    return event.type === "offer";
-  });
-  if (!offer_event) {
-    throw new Error('"offer" event is required');
-  }
-  const candidate_events = events.filter((event) => {
-    return event.type === "candidate";
-  });
+  const offer_event = events.find((event) => event.type === "offer");
+  if (!offer_event) throw new Error('"offer" event is required');
+  const candidate_events = events.filter((event) => event.type === "candidate");
   const mediaStream = await navigator.mediaDevices.getUserMedia({
     video: {
       width: { min: 640, ideal: 1920, max: 1920 },
@@ -215,25 +174,17 @@ async function make_answer(
     audio: false,
   });
   const localVideo = document.querySelector("#local-video");
-  if (localVideo) {
-    (localVideo as HTMLVideoElement).srcObject = mediaStream;
-  }
+  if (localVideo) (localVideo as HTMLVideoElement).srcObject = mediaStream;
   for (const track of mediaStream.getTracks()) {
     peer_connection.addTrack(track, mediaStream);
   }
   peer_connection.ontrack = (event) => {
-    const remoteVideo = document.querySelector("#remote-video");
-    if (!remoteVideo) {
-      return;
-    }
-    const video = remoteVideo as HTMLVideoElement;
-    const mediaStream = event.streams[0];
-    if (video.srcObject !== mediaStream) {
-      video.srcObject = mediaStream;
+    const remoteVideo = document.querySelector("#remote-video") as HTMLVideoElement | null;
+    if (remoteVideo && remoteVideo.srcObject !== event.streams[0]) {
+      remoteVideo.srcObject = event.streams[0];
     }
   };
-  const { sessionDescription } = offer_event;
-  peer_connection.setRemoteDescription(JSON.parse(sessionDescription));
+  peer_connection.setRemoteDescription(JSON.parse(offer_event.sessionDescription));
   const answer = await peer_connection.createAnswer();
   peer_connection.setLocalDescription(answer);
   candidate_events
@@ -253,21 +204,14 @@ async function make_offer(peer_connection: RTCPeerConnection) {
     audio: false,
   });
   const localVideo = document.querySelector("#local-video");
-  if (localVideo) {
-    (localVideo as HTMLVideoElement).srcObject = mediaStream;
-  }
+  if (localVideo) (localVideo as HTMLVideoElement).srcObject = mediaStream;
   for (const track of mediaStream.getTracks()) {
     peer_connection.addTrack(track, mediaStream);
   }
   peer_connection.ontrack = (event) => {
-    const remoteVideo = document.querySelector("#remote-video");
-    if (!remoteVideo) {
-      return;
-    }
-    const video = remoteVideo as HTMLVideoElement;
-    const mediaStream = event.streams[0];
-    if (video.srcObject !== mediaStream) {
-      video.srcObject = mediaStream;
+    const remoteVideo = document.querySelector("#remote-video") as HTMLVideoElement | null;
+    if (remoteVideo && remoteVideo.srcObject !== event.streams[0]) {
+      remoteVideo.srcObject = event.streams[0];
     }
   };
   const offer = await peer_connection.createOffer({

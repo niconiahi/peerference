@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { data, redirect } from "react-router";
 import { Form } from "react-router";
 import * as v from "valibot";
+import { ACCENT, Button, PageShell } from "~/components/ui";
 
 const usernameSchema = v.pipe(v.string(), v.minLength(1));
 
@@ -38,32 +39,74 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export default () => {
   return (
-    <main className="max-w-3xl mx-auto space-y-2 flex items-center justify-center h-screen">
-      <Form
-        className="bg-red-200 border-2 border-red-900 flex flex-col gap-2 p-1"
-        method="POST"
+    <PageShell>
+      <div
+        style={{
+          minHeight: "80vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
-        <p className="flex flex-col space-y-1">
-          <label htmlFor="caller" className="text-red-900">
-            Username
-          </label>
-          <input
-            required
-            type="text"
-            name="username"
-            id="username"
-            className="border-2 border-red-900"
-          />
-        </p>
-        <button
-          className="p-4 w-full bg-red-200 border-2 border-red-900 text-red-900 hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-red-100 disabled:text-red-300 disabled:border-red-300"
-          type="submit"
-          name="_action"
-          value="username"
+        <Form
+          method="POST"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            width: "100%",
+            maxWidth: 360,
+            background: "#fff",
+            border: "1px solid #eee",
+            borderRadius: 12,
+            padding: 28,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+          }}
         >
-          Use this username
-        </button>
-      </Form>
-    </main>
+          <h1
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              marginBottom: 4,
+              letterSpacing: -0.5,
+            }}
+          >
+            Choose a username
+          </h1>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label
+              htmlFor="username"
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: ACCENT,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}
+            >
+              Username
+            </label>
+            <input
+              required
+              type="text"
+              name="username"
+              id="username"
+              autoFocus
+              style={{
+                padding: "10px 12px",
+                border: "1.5px solid #ddd",
+                borderRadius: 8,
+                fontSize: 14,
+                outline: "none",
+                fontFamily: "Inter, sans-serif",
+              }}
+            />
+          </div>
+          <Button type="submit" name="_action" value="username" style={{ width: "100%" }}>
+            Continue
+          </Button>
+        </Form>
+      </div>
+    </PageShell>
   );
 };

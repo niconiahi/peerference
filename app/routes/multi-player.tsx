@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { useRef, useState } from "react";
 import invariant from "tiny-invariant";
 import { redirect } from "react-router";
@@ -18,6 +17,15 @@ import {
   OfferEventSchema,
 } from "~/utils/peer-connection";
 import { ICE_SERVERS } from "~/utils/ice_server";
+import {
+  ACCENT,
+  Button,
+  Field,
+  PageShell,
+  PageTitle,
+  VideoGrid,
+  eventColors,
+} from "~/components/ui";
 
 export function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -36,230 +44,102 @@ export default ({ loaderData }: Route.ComponentProps) => {
   const { username } = loaderData;
   const eventRef = useRef<HTMLTextAreaElement>(null);
   const [events, setEvents] = useState<Event[]>([]);
-  const [peerConnection, setPeerConnection] = useState<
-    RTCPeerConnection | undefined
-  >(undefined);
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | undefined>(undefined);
+
   const _candidateEvents = v.safeParse(
     v.array(CandidateEventSchema),
-    events.filter((event) => {
-      return event.type === "candidate";
-    }),
+    events.filter((e) => e.type === "candidate"),
   );
-  const candidateEvents = _candidateEvents.success
-    ? _candidateEvents.output
-    : [];
-  const _answerEvent = v.safeParse(
-    AnswerEventSchema,
-    events.find((event) => {
-      return event.type === "answer";
-    }),
-  );
+  const candidateEvents = _candidateEvents.success ? _candidateEvents.output : [];
+
+  const _answerEvent = v.safeParse(AnswerEventSchema, events.find((e) => e.type === "answer"));
   const answerEvent = _answerEvent.success ? _answerEvent.output : undefined;
-  const _offerEvent = v.safeParse(
-    OfferEventSchema,
-    events.find((event) => {
-      return event.type === "offer";
-    }),
-  );
+
+  const _offerEvent = v.safeParse(OfferEventSchema, events.find((e) => e.type === "offer"));
   const offerEvent = _offerEvent.success ? _offerEvent.output : undefined;
 
   return (
-    <main className="max-w-3xl mx-auto space-y-2 py-2">
-      <section className="grid grid-cols-6 gap-2">
-        <div className="col-span-4 border-2 border-gray-900 relative">
-          <video className="w-full" id="local-video" autoPlay playsInline />
-          <span className="absolute bottom-2 right-2 text-gray-100 bg-gray-900 rounded-md p-1">
-            {username}
-          </span>
-        </div>
-        <video
-          className="col-span-2 border-2 border-gray-900"
-          id="remote-video"
-          autoPlay
-          playsInline
-        />
-      </section>
-      <section className="grid grid-cols-10 gap-2">
-        <button
-          disabled={offerEvent !== undefined}
-          className="p-4 bg-blue-100 w-full border-2 text-blue-900 border-blue-900 hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-blue-100 disabled:text-blue-300 disabled:border-blue-300 col-span-4"
-          type="submit"
-          onClick={async () => {
-            // 1. creates peer connection
-            const peerConnection = new RTCPeerConnection(ICE_SERVERS);
+    <PageShell>
+      <PageTitle>Multi Player</PageTitle>
 
-            // 2. sets up media and its video
+      <VideoGrid username={username} />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+        <Button
+          type="button"
+          disabled={offerEvent !== undefined}
+          style={{ flex: 1 }}
+          onClick={async () => {
+            const pc = new RTCPeerConnection(ICE_SERVERS);
             const mediaStream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                width: { min: 640, ideal: 1920, max: 1920 },
-                height: { min: 480, ideal: 1080, max: 1080 },
-              },
+              video: { width: { min: 640, ideal: 1920, max: 1920 }, height: { min: 480, ideal: 1080, max: 1080 } },
               audio: false,
             });
-
             const localVideo = document.querySelector("#local-video");
+            if (localVideo) (localVideo as HTMLVideoElement).srcObject = mediaStream;
+            for (const track of mediaStream.getTracks()) pc.addTrack(track, mediaStream);
 
-            if (localVideo) {
-              (localVideo as HTMLVideoElement).srcObject = mediaStream;
-            }
-
-            // 3. adds its media tracks to the peer connection
-            for (const track of mediaStream.getTracks()) {
-              peerConnection.addTrack(track, mediaStream);
-            }
-
-            // 4. saves the candidates
-            peerConnection.onicecandidate = (event) => {
-              if (event.candidate) {
-                console.log("new candidate => ", event.candidate);
-                setEvents((prevEvents) => [
-                  ...prevEvents,
-                  {
-                    candidate: JSON.stringify(event.candidate),
-                    sender: username,
-                    type: "candidate",
-                  } as CandidateEvent,
-                ]);
-              } else {
-                console.log("all local candidates have been added =>");
+            pc.onicecandidate = (e) => {
+              if (e.candidate) {
+                setEvents((prev) => [...prev, { candidate: JSON.stringify(e.candidate), sender: username, type: "candidate" } as CandidateEvent]);
               }
             };
-
-            // 5. expects receiving tracks from the peer
-            peerConnection.ontrack = (event) => {
-              const remoteVideo = document.querySelector("#remote-video");
-              if (!remoteVideo) {
-                return;
-              }
-              const video = remoteVideo as HTMLVideoElement;
-              const mediaStream = event.streams[0];
-              if (video.srcObject !== mediaStream) {
-                video.srcObject = mediaStream;
-              }
+            pc.ontrack = (e) => {
+              const v = document.querySelector("#remote-video") as HTMLVideoElement | null;
+              if (v && v.srcObject !== e.streams[0]) v.srcObject = e.streams[0];
             };
 
-            // 6. creates offer `.createOffer()`
-            const offer = await peerConnection.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: true,
-            });
-
-            // 7. sets setLocalDescription
-            peerConnection.setLocalDescription(offer);
-
-            // 8. sends the offer as the "offer" event
-            setPeerConnection(peerConnection);
-            setEvents((prevEvents) => [
-              ...prevEvents,
-              {
-                type: "offer",
-                sender: username,
-                sessionDescription: JSON.stringify(offer),
-              } as OfferEvent,
-            ]);
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+            pc.setLocalDescription(offer);
+            setPeerConnection(pc);
+            setEvents((prev) => [...prev, { type: "offer", sender: username, sessionDescription: JSON.stringify(offer) } as OfferEvent]);
           }}
         >
           Create offer
-        </button>
-        <button
+        </Button>
+
+        <Button
           type="button"
-          className="p-4 w-full bg-green-200 border-2 border-green-900 text-green-900 hover:bg-green-400 disabled:cursor-not-allowed disabled:bg-green-100 disabled:text-green-300 disabled:border-green-300 col-span-4"
+          variant="secondary"
+          style={{ flex: 1 }}
           disabled={offerEvent === undefined || username === offerEvent.sender}
           onClick={async () => {
             invariant(offerEvent, '"offer" is required to create an answer');
-
-            // 1. creates peer connection
-            const peerConnection = new RTCPeerConnection(ICE_SERVERS);
-
-            // 2. sets up media and its video
+            const pc = new RTCPeerConnection(ICE_SERVERS);
             const mediaStream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                width: { min: 640, ideal: 1920, max: 1920 },
-                height: { min: 480, ideal: 1080, max: 1080 },
-              },
+              video: { width: { min: 640, ideal: 1920, max: 1920 }, height: { min: 480, ideal: 1080, max: 1080 } },
               audio: false,
             });
-
             const localVideo = document.querySelector("#local-video");
+            if (localVideo) (localVideo as HTMLVideoElement).srcObject = mediaStream;
+            for (const track of mediaStream.getTracks()) pc.addTrack(track, mediaStream);
 
-            if (localVideo) {
-              (localVideo as HTMLVideoElement).srcObject = mediaStream;
-            }
-
-            // 3. adds its media tracks to the peer connection
-            for (const track of mediaStream.getTracks()) {
-              peerConnection.addTrack(track, mediaStream);
-            }
-
-            // 4. saves the candidates
-            peerConnection.onicecandidate = (event) => {
-              if (event.candidate) {
-                console.log("new candidate => ", event.candidate);
-                setEvents((prevEvents) => [
-                  ...prevEvents,
-                  {
-                    candidate: JSON.stringify(event.candidate),
-                    sender: username,
-                    type: "candidate",
-                  } as CandidateEvent,
-                ]);
-              } else {
-                console.log("all local candidates have been added =>");
+            pc.onicecandidate = (e) => {
+              if (e.candidate) {
+                setEvents((prev) => [...prev, { candidate: JSON.stringify(e.candidate), sender: username, type: "candidate" } as CandidateEvent]);
               }
             };
-
-            // 5. expects receiving tracks from the peer
-            peerConnection.ontrack = (event) => {
-              const remoteVideo = document.querySelector("#remote-video");
-              if (!remoteVideo) {
-                return;
-              }
-              const video = remoteVideo as HTMLVideoElement;
-              const mediaStream = event.streams[0];
-              if (video.srcObject !== mediaStream) {
-                video.srcObject = mediaStream;
-              }
+            pc.ontrack = (e) => {
+              const v = document.querySelector("#remote-video") as HTMLVideoElement | null;
+              if (v && v.srcObject !== e.streams[0]) v.srcObject = e.streams[0];
             };
 
-            // 6. gets the offer value from the received event
-            const { sessionDescription } = offerEvent;
-
-            // 7. sets remote description using the offer
-            peerConnection.setRemoteDescription(JSON.parse(sessionDescription));
-
-            // 8. creates the answer using the offer
-            const answer = await peerConnection.createAnswer();
-
-            // 9. sets local description using the answer
-            peerConnection.setLocalDescription(answer);
-
-            // 10. add peer candidates
-            candidateEvents
-              .filter(({ sender }) => sender !== username)
-              .forEach(({ candidate, sender }) => {
-                console.log(
-                  `${username} added an ice candidate from ${sender} =>`,
-                );
-                peerConnection.addIceCandidate(JSON.parse(candidate));
-              });
-
-            // 11. sends the answer as the "answer" event
-            setPeerConnection(peerConnection);
-            setEvents((prevEvents) => [
-              ...prevEvents,
-              {
-                type: "answer",
-                sender: username,
-                sessionDescription: JSON.stringify(answer),
-              } as AnswerEvent,
-            ]);
+            pc.setRemoteDescription(JSON.parse(offerEvent.sessionDescription));
+            const answer = await pc.createAnswer();
+            pc.setLocalDescription(answer);
+            candidateEvents.filter(({ sender }) => sender !== username).forEach(({ candidate }) => {
+              pc.addIceCandidate(JSON.parse(candidate));
+            });
+            setPeerConnection(pc);
+            setEvents((prev) => [...prev, { type: "answer", sender: username, sessionDescription: JSON.stringify(answer) } as AnswerEvent]);
           }}
         >
           Create answer
-        </button>
-        <button
+        </Button>
+
+        <Button
           type="button"
-          className="p-4 w-full bg-green-200 border-2 border-green-900 text-green-900 hover:bg-green-400 disabled:cursor-not-allowed disabled:bg-green-100 disabled:text-green-300 disabled:border-green-300 col-span-2"
+          variant="secondary"
           disabled={
             offerEvent === undefined ||
             answerEvent === undefined ||
@@ -269,209 +149,113 @@ export default ({ loaderData }: Route.ComponentProps) => {
           }
           onClick={async () => {
             invariant(offerEvent, '"offerEvent" is required to add the answer');
-            invariant(
-              answerEvent,
-              '"offerEvent" is required to add the answer',
-            );
-            invariant(
-              peerConnection,
-              '"peerConnection" is required to add the answer',
-            );
-
-            // 1. sets local description using the offer
-            await peerConnection.setLocalDescription(
-              JSON.parse(offerEvent.sessionDescription),
-            );
-
-            // 2. sets remote description using the answer
-            await peerConnection.setRemoteDescription(
-              JSON.parse(answerEvent.sessionDescription),
-            );
-
-            // 3. add peer candidates
-            candidateEvents
-              .filter(({ sender }) => sender !== username)
-              .forEach(({ candidate, sender }) => {
-                peerConnection.addIceCandidate(JSON.parse(candidate));
-                console.log(
-                  `${username} added an ice candidate from ${sender} =>`,
-                );
-              });
+            invariant(answerEvent, '"answerEvent" is required to add the answer');
+            invariant(peerConnection, '"peerConnection" is required to add the answer');
+            await peerConnection.setLocalDescription(JSON.parse(offerEvent.sessionDescription));
+            await peerConnection.setRemoteDescription(JSON.parse(answerEvent.sessionDescription));
+            candidateEvents.filter(({ sender }) => sender !== username).forEach(({ candidate }) => {
+              peerConnection.addIceCandidate(JSON.parse(candidate));
+            });
           }}
         >
           Add answer
-        </button>
-      </section>
-      <section className="grid grid-cols-2 gap-2">
-        <p className="flex flex-col">
-          <label
-            className="text-blue-900 border-2 border-blue-900 w-fit border-b-0 p-1"
-            htmlFor="offer"
-          >
-            Offer
-          </label>
-          <textarea
-            id="offer"
-            className="h-[300px] p-1 border-2 border-blue-900 bg-blue-200"
-            readOnly
-            disable
-            defaultValue={offerEvent?.sessionDescription ?? ""}
-          />
-        </p>
-        <p className="flex flex-col">
-          <label
-            className="text-green-900 border-2 border-green-900 w-fit border-b-0 p-1"
-            htmlFor="answer"
-          >
-            Answer
-          </label>
-          <textarea
-            id="answer"
-            className="h-[300px] p-1 border-2 border-green-900 bg-green-200"
-            disabled
-            readOnly
-            defaultValue={answerEvent?.sessionDescription ?? ""}
-          />
-        </p>
-      </section>
-      <section className="grid grid-cols-3 space-y-2 gap-x-2 items-end">
-        <p className="flex flex-col col-span-2">
-          <label
-            className="text-teal-900 border-2 border-teal-900 w-fit border-b-0 p-1"
-            htmlFor="event"
-          >
-            Event
-          </label>
-          <textarea
+        </Button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <Field label="Offer" id="offer" defaultValue={offerEvent?.sessionDescription ?? ""} readOnly disabled />
+        <Field label="Answer" id="answer" defaultValue={answerEvent?.sessionDescription ?? ""} readOnly disabled />
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <div style={{ flex: 1 }}>
+          <Field
+            label="Paste event"
             id="event"
             placeholder="Paste copied event here"
-            className="max-h-[44px] h-[44px] flex-1 p-1 border-2 border-teal-900 bg-teal-200 placeholder:text-teal-900"
-            ref={eventRef}
+            textareaRef={eventRef}
+            rows={2}
           />
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            const textarea = eventRef.current;
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end" }}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              const textarea = eventRef.current;
+              if (!textarea) return;
+              const isArray = Array.isArray(JSON.parse(textarea.value));
+              const parsed = v.safeParse(
+                v.array(EventSchema),
+                isArray ? JSON.parse(textarea.value) : [JSON.parse(textarea.value)],
+              );
+              if (!parsed.success) { console.error(parsed.issues); return; }
+              setEvents((prev) => [...prev, ...parsed.output]);
+              textarea.value = "";
+            }}
+          >
+            Add event
+          </Button>
+        </div>
+      </div>
 
-            if (!textarea) {
-              return;
-            }
+      <Button
+        type="button"
+        variant="secondary"
+        style={{ width: "100%", marginBottom: 16 }}
+        onClick={() => {
+          const emitted = events.filter((e) => e.sender === username);
+          navigator.clipboard.writeText(JSON.stringify(emitted));
+        }}
+      >
+        Copy your events for the peer
+      </Button>
 
-            const isArray = Array.isArray(JSON.parse(textarea.value));
-            const events = v.safeParse(
-              v.array(EventSchema),
-              isArray
-                ? JSON.parse(textarea.value)
-                : [JSON.parse(textarea.value)],
-            );
-
-            if (!events.success) {
-              console.error(events.issues);
-              return;
-            }
-
-            setEvents((prevEvents) => [...prevEvents, ...events.output]);
-
-            textarea.value = "";
-            console.info(
-              `imported ${events.output.length} events from ${events.output[0].sender}`,
-            );
-          }}
-          className={clsx([
-            "h-[44px] col-span-1",
-            "border-teal-900 bg-teal-200 text-teal-900 hover:bg-teal-400 border-2",
-          ])}
-        >
-          Add event
-        </button>
-      </section>
-      <section className="grid grid-cols-1 space-y-2">
-        <button
-          type="button"
-          className="h-[44px] bg-indigo-100 w-full border-2 text-indigo-900 border-indigo-900 hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-100 disabled:text-indigo-300 disabled:border-indigo-300 col-span-4"
-          onClick={() => {
-            const emmitedEvents = events.filter(
-              (event) => event.sender === username,
-            );
-            navigator.clipboard.writeText(JSON.stringify(emmitedEvents));
-            console.info(
-              `copied ${emmitedEvents.length} events emmited by you`,
-            );
-          }}
-        >
-          Copy events for the peer
-        </button>
-        <ol className="space-y-2">
-          {events.map((event, index) => {
-            function getColors(type: Event["type"]) {
-              if (type === "offer") {
-                return "bg-pink-200 text-pink-900 border-pink-900";
-              }
-              if (type === "answer") {
-                return "bg-orange-200 text-orange-900 border-orange-900";
-              }
-              if (type === "candidate") {
-                return "bg-yellow-200 text-yellow-900 border-yellow-900";
-              }
-            }
-
-            function getHoverColors(type: Event["type"]) {
-              if (type === "offer") {
-                return "hover:bg-pink-400";
-              }
-              if (type === "answer") {
-                return "hover:bg-orange-400";
-              }
-              if (type === "candidate") {
-                return "hover:bg-yellow-400";
-              }
-            }
-            const id = `event-${event.type}-${index}`;
-            return (
-              <li
-                key={id}
-                className={clsx([
-                  "flex items-center p-1 w-full border-2 space-x-2",
-                  getColors(event.type),
-                ])}
+      <ol style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {events.map((event, index) => {
+          const colors = eventColors(event.type);
+          const id = `event-${event.type}-${index}`;
+          return (
+            <li
+              key={id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 12px",
+                background: colors.bg,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 8,
+                fontSize: 13,
+              }}
+            >
+              <span style={{ fontWeight: 700, color: colors.text, minWidth: 20 }}>{index}</span>
+              <span style={{ flex: 1, color: colors.text }}>
+                <b>{event.type}</b> — sent by {event.sender}
+              </span>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(JSON.stringify(event))}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 4,
+                  color: colors.text,
+                  display: "flex",
+                  alignItems: "center",
+                }}
               >
-                <span className="font-bold">{index}</span>
-                <span className="flex-1">
-                  {event.type} {`event =>`} sent by {event.sender}
-                </span>
-                <button
-                  type="button"
-                  className={clsx(
-                    "p-0.5 border-2 rounded-md",
-                    getHoverColors(event.type),
-                    getColors(event.type),
-                  )}
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(event));
-                  }}
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <title>Copy button</title>
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                  </svg>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </section>
-    </main>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <title>Copy</title>
+                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                </svg>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </PageShell>
   );
 };
