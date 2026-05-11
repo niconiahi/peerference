@@ -1,8 +1,29 @@
-body,
-input {
-  background-color: "#d3d3d3";
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+* {
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  min-height: 100%;
+}
+
+body {
+  background: linear-gradient(#feece7, #f9f7f1);
+  min-height: 100vh;
 }
 
 button {
   cursor: pointer;
+}
+
+a:hover {
+  cursor: pointer;
+  text-underline-offset: 4px;
+  text-decoration: underline;
 }
